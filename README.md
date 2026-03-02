@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="https://kanarek.app/favicon.svg" width="80" height="80" alt="Kanarek logo" />
-</p>
-
 <h1 align="center">kanarek-mcp</h1>
 
 <p align="center">
@@ -10,8 +6,8 @@
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/kanarek-mcp"><img src="https://img.shields.io/pypi/v/kanarek-mcp" alt="PyPI version"></a>
-  <a href="https://pypi.org/project/kanarek-mcp"><img src="https://img.shields.io/pypi/pyversions/kanarek-mcp" alt="Python versions"></a>
+  <a href="https://github.com/KanarekApp/Kanarek-MCP"><img src="https://img.shields.io/github/stars/KanarekApp/Kanarek-MCP" alt="GitHub stars"></a>
+  <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python versions">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-CC%20BY--NC--ND%204.0-blue" alt="License"></a>
 </p>
 
@@ -62,7 +58,7 @@ Add to your config file:
   "mcpServers": {
     "kanarek": {
       "command": "uvx",
-      "args": ["kanarek-mcp"]
+      "args": ["--from", "git+https://github.com/KanarekApp/Kanarek-MCP.git", "kanarek-mcp"]
     }
   }
 }
@@ -73,7 +69,7 @@ Add to your config file:
 Run in your project directory:
 
 ```bash
-claude mcp add kanarek -- uvx kanarek-mcp
+claude mcp add kanarek -- uvx --from "git+https://github.com/KanarekApp/Kanarek-MCP.git" kanarek-mcp
 ```
 
 ### VS Code
@@ -85,7 +81,7 @@ Add to your `.vscode/mcp.json` (create the file if it doesn't exist):
   "servers": {
     "kanarek": {
       "command": "uvx",
-      "args": ["kanarek-mcp"]
+      "args": ["--from", "git+https://github.com/KanarekApp/Kanarek-MCP.git", "kanarek-mcp"]
     }
   }
 }
@@ -99,7 +95,7 @@ Open **Settings** > **MCP Servers** > **Add Server**, then use:
 {
   "kanarek": {
     "command": "uvx",
-    "args": ["kanarek-mcp"]
+    "args": ["--from", "git+https://github.com/KanarekApp/Kanarek-MCP.git", "kanarek-mcp"]
   }
 }
 ```
@@ -109,7 +105,7 @@ Open **Settings** > **MCP Servers** > **Add Server**, then use:
 kanarek-mcp works with any client that supports the [Model Context Protocol](https://modelcontextprotocol.io). It runs locally via **stdio** transport — just point your client to:
 
 ```
-uvx kanarek-mcp
+uvx --from "git+https://github.com/KanarekApp/Kanarek-MCP.git" kanarek-mcp
 ```
 
 ---
@@ -203,8 +199,8 @@ No API keys or authentication required.
 
 ```bash
 # Clone and install
-git clone https://github.com/kanarek-app/kanarek-mcp.git
-cd kanarek-mcp
+git clone https://github.com/KanarekApp/Kanarek-MCP.git
+cd Kanarek-MCP
 uv sync
 
 # Run unit tests
