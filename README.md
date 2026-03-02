@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://pypi.org/project/kanarek-mcp"><img src="https://img.shields.io/pypi/v/kanarek-mcp" alt="PyPI version"></a>
   <a href="https://pypi.org/project/kanarek-mcp"><img src="https://img.shields.io/pypi/pyversions/kanarek-mcp" alt="Python versions"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/kanarek-app/kanarek-mcp" alt="License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-CC%20BY--NC--ND%204.0-blue" alt="License"></a>
 </p>
 
 ---
@@ -251,7 +251,7 @@ Data is provided by the [Kanarek](https://kanarek.app) platform, aggregating rea
 
 ## License
 
-[MIT](LICENSE)
+[CC BY-NC-ND 4.0](LICENSE)
 
 ---
 
