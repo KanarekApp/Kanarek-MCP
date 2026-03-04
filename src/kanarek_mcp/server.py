@@ -5,6 +5,7 @@ from typing import Any
 
 import httpx
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from kanarek_mcp.api_client import KanarekClient
 from kanarek_mcp.formatters import (
@@ -21,6 +22,7 @@ from kanarek_mcp.formatters import (
 
 mcp = FastMCP("kanarek")
 _client: KanarekClient | None = None
+_READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
 
 
 def _get_client() -> KanarekClient:
@@ -77,7 +79,7 @@ async def _resolve_station_id(client: KanarekClient, city: str) -> str | None:
     return results[0].get("id") if results else None
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ_ONLY)
 async def get_air_quality(
     city: str | None = None,
     latitude: float | None = None,
@@ -116,7 +118,7 @@ async def get_air_quality(
         return _error_response(e)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ_ONLY)
 async def compare_air_quality(
     cities: list[str],
     pollutant: str = "pm25",
@@ -152,7 +154,7 @@ async def compare_air_quality(
         return _error_response(e)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ_ONLY)
 async def get_air_quality_history(
     pollutant: str = "pm25",
     period: str = "7d",
@@ -210,7 +212,7 @@ async def get_air_quality_history(
         return _error_response(e)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ_ONLY)
 async def get_air_quality_rankings(
     ranking_type: str = "city",
     pollutant: str = "pm25",
@@ -255,7 +257,7 @@ async def get_air_quality_rankings(
         return _error_response(e)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ_ONLY)
 async def find_stations(
     query: str | None = None,
     latitude: float | None = None,
@@ -297,7 +299,7 @@ async def find_stations(
         return _error_response(e)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ_ONLY)
 async def get_station_details(station_id: str) -> str:
     """Get detailed information and current measurements for a specific station.
 
