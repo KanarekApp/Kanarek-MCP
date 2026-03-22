@@ -122,7 +122,7 @@ Once installed, just talk to your AI assistant naturally. Here are some examples
 >
 > "What are the PM2.5 levels near latitude 52.23, longitude 21.01?"
 
-Uses `get_air_quality` — returns distance-weighted area average, WHO guideline comparisons, and readings from individual stations.
+Uses `get_air_quality` — for city names, returns city-level PM2.5/PM10 averages with ranking among all cities. For coordinates, returns distance-weighted averages from nearby stations with per-station breakdown.
 
 ### City comparisons
 
@@ -130,7 +130,7 @@ Uses `get_air_quality` — returns distance-weighted area average, WHO guideline
 >
 > "Which city has cleaner air — Poznań or Łódź?"
 
-Uses `compare_air_quality` — fetches data for all cities concurrently and ranks them worst-first.
+Uses `compare_air_quality` — fetches city-level data for all cities concurrently and ranks them worst-first, with ranking position.
 
 ### Historical trends
 
@@ -140,7 +140,7 @@ Uses `compare_air_quality` — fetches data for all cities concurrently and rank
 >
 > "What was the worst air quality day in Wrocław last year?"
 
-Uses `get_air_quality_history` — returns summary statistics (min/max/avg), trend direction, and for yearly views: monthly averages, worst/best days, and WHO exceedance counts.
+Uses `get_air_quality_history` — for recent trends (24h/7d/30d): returns summary statistics, trend direction. For yearly calendar: city queries return city-wide aggregated data, station queries return single-station data. Includes monthly averages, worst/best days, and WHO exceedance counts.
 
 ### Pollution rankings
 
@@ -150,7 +150,7 @@ Uses `get_air_quality_history` — returns summary statistics (min/max/avg), tre
 >
 > "How does Warsaw rank compared to other cities?"
 
-Uses `get_air_quality_rankings` — supports ranking by city or station, for PM2.5, PM10, NO2, or O3, over 1h/8h/24h periods.
+Uses `get_air_quality_rankings` — supports ranking by city or country, for PM2.5 or PM10, over 24h/7d/30d/12m periods. Drill down into any place for detailed air quality and ranking info.
 
 ### Finding stations
 
@@ -174,10 +174,10 @@ Uses `get_station_details` — returns current and 24h average readings for ever
 
 | Tool | Description | Key parameters |
 |------|-------------|----------------|
-| `get_air_quality` | Current air quality for a location | `city` or `latitude`+`longitude`, `radius_km`, `pollutant` |
+| `get_air_quality` | Current air quality for a location | `city` or `latitude`+`longitude`, `radius_km` |
 | `compare_air_quality` | Compare 2–5 cities side by side | `cities`, `pollutant` |
 | `get_air_quality_history` | Historical readings or yearly calendar | `city` or `station_id`, `pollutant`, `period`, `year` |
-| `get_air_quality_rankings` | Ranked cities/stations by pollution | `ranking_type`, `pollutant`, `period`, `limit`, `identifier` |
+| `get_air_quality_rankings` | Ranked cities/countries by pollution | `ranking_type`, `pollutant`, `period`, `limit`, `place_id` |
 | `find_stations` | Search for monitoring stations | `query` or `latitude`+`longitude`, `provider`, `limit` |
 | `get_station_details` | Full measurements for one station | `station_id` |
 
@@ -222,8 +222,8 @@ kanarek-mcp follows an **outcome-oriented** design — one tool call produces on
 ```
 "What's the air quality in Warsaw?"
 
-  1. Search stations for "Warsaw"     → GET /search/stations?q=Warsaw
-  2. Get nearby readings + averages   → GET /stations/nearby?lat=...&lng=...
+  1. Search places for "Warsaw"       → GET /places/search?q=Warsaw
+  2. Get city air quality + ranking   → GET /places/{place_id}
   3. Format with WHO comparisons      → concise text response
 ```
 

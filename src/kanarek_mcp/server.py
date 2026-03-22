@@ -11,9 +11,10 @@ from kanarek_mcp.api_client import KanarekClient
 from kanarek_mcp.formatters import (
     format_air_quality,
     format_calendar,
-    format_comparison,
     format_config,
     format_history,
+    format_place_air_quality,
+    format_place_comparison,
     format_place_details,
     format_rankings_list,
     format_station_details,
@@ -49,20 +50,13 @@ def _error_response(e: Exception) -> str:
     return f"Error: {e}"
 
 
-async def _search_city_coords(client: KanarekClient, city: str) -> dict[str, float] | None:
-    """Search for a city and return coordinates of the top result."""
-    data = await client.get("/search/stations", params={"q": city})
+async def _resolve_place(client: KanarekClient, city: str) -> dict[str, Any] | None:
+    """Search for a place by name and return the top result."""
+    data = await client.get("/places/search", params={"q": city, "limit": 1})
     if not data:
         return None
     results = data.get("results") or []
-    if not results:
-        return None
-    loc = results[0].get("location") or {}
-    lat = loc.get("latitude")
-    lng = loc.get("longitude")
-    if lat is not None and lng is not None:
-        return {"lat": lat, "lng": lng}
-    return None
+    return results[0] if results else None
 
 
 async def _resolve_station_id(client: KanarekClient, city: str) -> str | None:
@@ -71,11 +65,9 @@ async def _resolve_station_id(client: KanarekClient, city: str) -> str | None:
     if not data:
         return None
     results = data.get("results") or []
-    # Prefer GIOŚ station for reliable history data
     for r in results:
         if r.get("provider_name") == "gios":
             return r.get("id")
-    # Fall back to first result
     return results[0].get("id") if results else None
 
 
@@ -85,35 +77,38 @@ async def get_air_quality(
     latitude: float | None = None,
     longitude: float | None = None,
     radius_km: float = 10,
-    pollutant: str | None = None,
 ) -> str:
-    """Get current air quality for a location. Provide either a city name or coordinates.
+    """Get current air quality for a location.
+
+    Use a city name for city-level PM2.5/PM10 averages with ranking among all cities.
+    Use coordinates for distance-weighted averages from nearby stations with per-station breakdown.
 
     Args:
-        city: City name to search for (e.g. "Warsaw", "Kraków")
-        latitude: Latitude of the location
-        longitude: Longitude of the location
-        radius_km: Search radius in km (default: 10)
-        pollutant: Filter to specific pollutant (pm25, pm10, no2, o3, so2, co)
+        city: City name (e.g. "Warsaw", "Kraków", "Berlin")
+        latitude: Latitude for coordinate-based lookup
+        longitude: Longitude for coordinate-based lookup
+        radius_km: Search radius in km for coordinate lookup (default: 10)
     """
     try:
         client = _get_client()
         if city:
-            coords = await _search_city_coords(client, city)
-            if not coords:
-                return f"No stations found for \"{city}\". Try a different spelling or use coordinates."
+            place = await _resolve_place(client, city)
+            if not place:
+                return f'No location found for "{city}". Try a different spelling or use coordinates.'
+            data = await client.get(f"/places/{place['id']}")
+            if not data:
+                return f'No air quality data for "{city}".'
+            return format_place_air_quality(data)
         elif latitude is not None and longitude is not None:
-            coords = {"lat": latitude, "lng": longitude}
+            data = await client.get(
+                "/stations/nearby",
+                params={"lat": latitude, "lng": longitude, "radius_km": radius_km, "include_averages": "true"},
+            )
+            if not data or not data.get("stations"):
+                return f"No stations found within {radius_km} km of the location."
+            return format_air_quality(data)
         else:
             return "Please provide either a city name or latitude+longitude coordinates."
-
-        data = await client.get(
-            "/stations/nearby",
-            params={**coords, "radius_km": radius_km, "include_averages": "true"},
-        )
-        if not data or not data.get("stations"):
-            return f"No stations found within {radius_km} km of the location."
-        return format_air_quality(data, pollutant)
     except Exception as e:
         return _error_response(e)
 
@@ -123,11 +118,11 @@ async def compare_air_quality(
     cities: list[str],
     pollutant: str = "pm25",
 ) -> str:
-    """Compare air quality across multiple cities (2-5).
+    """Compare air quality across multiple cities (2-5), sorted worst-first.
 
     Args:
         cities: List of city names to compare (2-5 cities)
-        pollutant: Pollutant to compare (default: pm25). Options: pm25, pm10, no2, o3, so2, co
+        pollutant: Pollutant to compare and rank by (default: pm25). Options: pm25, pm10
     """
     if len(cities) < 2:
         return "Please provide at least 2 cities to compare."
@@ -138,18 +133,18 @@ async def compare_air_quality(
         client = _get_client()
 
         async def fetch_city(city: str) -> tuple[str, dict[str, Any] | None]:
-            coords = await _search_city_coords(client, city)
-            if not coords:
+            place = await _resolve_place(client, city)
+            if not place:
                 return city, None
             data = await client.get(
-                "/stations/nearby",
-                params={**coords, "radius_km": 10, "include_averages": "true"},
+                f"/places/{place['id']}",
+                params={"substance": pollutant},
             )
             return city, data
 
         results = await asyncio.gather(*[fetch_city(c) for c in cities])
         city_results = dict(results)
-        return format_comparison(city_results, pollutant)
+        return format_place_comparison(city_results, pollutant)
     except Exception as e:
         return _error_response(e)
 
@@ -162,12 +157,15 @@ async def get_air_quality_history(
     station_id: str | None = None,
     year: int | None = None,
 ) -> str:
-    """Get historical air quality data for a station.
+    """Get historical air quality data.
+
+    For yearly calendar: provide city (city-wide aggregated data) or station_id with year.
+    For recent trends (24h/7d/30d): provide city or station_id with period.
 
     Args:
-        pollutant: Measurement type (default: pm25). Options: pm25, pm10, no2, o3, so2, co
+        pollutant: Measurement type (default: pm25). Options: pm25, pm10 for city; pm25, pm10, no2, o3, so2, co for station
         period: Time period — "24h", "7d", "30d", or "year" (requires year param)
-        city: City name — will resolve to best available station
+        city: City name — yearly calendar uses city-wide data, periods use best station
         station_id: Specific station ID (use find_stations to discover IDs)
         year: Year for calendar view (e.g. 2025). Sets period to "year" automatically.
     """
@@ -177,30 +175,43 @@ async def get_air_quality_history(
         if year:
             period = "year"
 
-        # Resolve station ID
-        sid = station_id
-        if not sid:
-            if city:
-                sid = await _resolve_station_id(client, city)
-                if not sid:
-                    return f"No stations found for \"{city}\"."
-            else:
-                return "Please provide either a city name or a station_id."
-
-        # Fetch station info for context
-        station_info = await client.get(f"/stations/{sid}")
-
         if period == "year":
             if not year:
                 year = 2025
-            data = await client.get(
-                f"/stations/{sid}/calendar",
-                params={"measurement_type": pollutant, "year": year},
-            )
-            if not data:
-                return "No calendar data available for this station."
-            return format_calendar(data, station_info)
+            if city:
+                place = await _resolve_place(client, city)
+                if not place:
+                    return f'No location found for "{city}".'
+                data = await client.get(
+                    f"/places/{place['id']}/calendar",
+                    params={"substance": pollutant, "year": year},
+                )
+                if not data:
+                    return "No calendar data available."
+                return format_calendar(data, context_name=place.get("name", city))
+            elif station_id:
+                station_info = await client.get(f"/stations/{station_id}")
+                data = await client.get(
+                    f"/stations/{station_id}/calendar",
+                    params={"measurement_type": pollutant, "year": year},
+                )
+                if not data:
+                    return "No calendar data available for this station."
+                station_name = station_info.get("name", "") if station_info else ""
+                return format_calendar(data, context_name=station_name)
+            else:
+                return "Please provide either a city name or a station_id."
         else:
+            sid = station_id
+            if not sid:
+                if city:
+                    sid = await _resolve_station_id(client, city)
+                    if not sid:
+                        return f'No stations found for "{city}".'
+                else:
+                    return "Please provide either a city name or a station_id."
+
+            station_info = await client.get(f"/stations/{sid}")
             data = await client.get(
                 f"/stations/{sid}/history",
                 params={"measurement_type": pollutant, "period": period},
@@ -222,12 +233,15 @@ async def get_air_quality_rankings(
 ) -> str:
     """Get air quality rankings by city or country, or details for a specific place.
 
+    Without place_id: returns ranked list of cities/countries sorted worst-first.
+    With place_id: returns detailed air quality and ranking for that place.
+
     Args:
         ranking_type: "city" or "country" (default: city)
         pollutant: Pollutant to rank by (default: pm25). Options: pm25, pm10
         period: Time period — "24h", "7d", "30d", or "12m" (default: 24h)
         limit: Number of results (default: 10, max: 50)
-        place_id: Place UUID for detail view (from rankings results). Shows place air quality and ranking info.
+        place_id: Place UUID for detail view (from rankings results)
     """
     try:
         client = _get_client()

@@ -60,8 +60,103 @@ def _freshness(timestamp_str: str | None) -> str:
         return ""
 
 
+def _format_hierarchy(data: dict[str, Any]) -> str:
+    """Build location path from hierarchy."""
+    hierarchy = data.get("hierarchy") or []
+    if hierarchy:
+        return " > ".join(h.get("name", "?") for h in reversed(hierarchy))
+    return ""
+
+
+def format_place_air_quality(data: dict[str, Any]) -> str:
+    """Format place response into city-level air quality summary."""
+    lines: list[str] = []
+    name = data.get("name", "?")
+    level = data.get("level", "")
+    country = data.get("country_code", "")
+    station_count = data.get("station_count", 0)
+
+    header = name
+    if country:
+        header += f", {country}"
+    lines.append(header)
+
+    path = _format_hierarchy(data)
+    if path:
+        lines.append(f"Location: {path}")
+
+    lines.append("")
+
+    aq = data.get("air_quality")
+    if aq:
+        lines.append("Air quality:")
+        pm25 = aq.get("pm25_avg")
+        pm10 = aq.get("pm10_avg")
+        if pm25 is not None:
+            lines.append(f"  PM2.5: {pm25:.1f} {_unit('pm25')}{_who_comparison('pm25', pm25)}")
+        if pm10 is not None:
+            lines.append(f"  PM10: {pm10:.1f} {_unit('pm10')}{_who_comparison('pm10', pm10)}")
+        aq_stations = aq.get("station_count")
+        if aq_stations:
+            lines.append(f"  Based on {aq_stations} stations")
+    else:
+        lines.append("No current air quality data available.")
+
+    lines.append("")
+
+    ranking = data.get("ranking")
+    if ranking:
+        substance = ranking.get("substance", "?")
+        period = ranking.get("period", "?")
+        avg = ranking.get("average_value", 0)
+        rank = ranking.get("rank", "?")
+        total = ranking.get("total", "?")
+        lines.append(f"Ranking ({substance}, {period}): #{rank} of {total} — avg {avg:.1f} {_unit(substance)}")
+
+    lines.append(f"Total monitoring stations: {station_count}")
+
+    return "\n".join(lines)
+
+
+def format_place_comparison(
+    city_results: dict[str, dict[str, Any] | None], pollutant: str
+) -> str:
+    """Format multi-city comparison using place data, sorted worst-first."""
+    lines: list[str] = []
+    entries: list[tuple[str, float, int, dict[str, Any]]] = []
+    not_found: list[str] = []
+
+    avg_key = f"{pollutant}_avg"
+
+    for city, data in city_results.items():
+        if data is None:
+            not_found.append(city)
+            continue
+        aq = data.get("air_quality") or {}
+        val = aq.get(avg_key)
+        if val is not None:
+            ranking = data.get("ranking") or {}
+            entries.append((data.get("name", city), val, aq.get("station_count", 0), ranking))
+        else:
+            not_found.append(city)
+
+    entries.sort(key=lambda x: x[1], reverse=True)
+
+    lines.append(f"Air quality comparison — {pollutant} ({_unit(pollutant)}):")
+    lines.append("")
+    for i, (name, val, count, ranking) in enumerate(entries, 1):
+        rank_str = ""
+        if ranking.get("rank"):
+            rank_str = f" — Rank #{ranking['rank']} of {ranking.get('total', '?')}"
+        lines.append(f"  {i}. {name}: {val:.1f} {_unit(pollutant)}{_who_comparison(pollutant, val)} ({count} stations){rank_str}")
+    if not_found:
+        lines.append(f"\n  No data for: {', '.join(not_found)}")
+
+    return "\n".join(lines)
+
+
 def format_air_quality(data: dict[str, Any], pollutant: str | None = None) -> str:
-    """Format nearby stations response into air quality summary."""
+    """Format nearby stations response into air quality summary (coordinate-based)."""
     lines: list[str] = []
     location = data.get("location", {})
     lat = location.get("latitude", "?")
@@ -104,38 +199,6 @@ def format_air_quality(data: dict[str, Any], pollutant: str | None = None) -> st
 
     if not averages and not stations:
         lines.append(f"No stations found within {radius} km of ({lat}, {lng}).")
-
-    return "\n".join(lines)
-
-
-def format_comparison(
-    city_results: dict[str, dict[str, Any] | None], pollutant: str
-) -> str:
-    """Format multi-city comparison sorted worst-first."""
-    lines: list[str] = []
-    entries: list[tuple[str, float, int]] = []
-    not_found: list[str] = []
-
-    for city, data in city_results.items():
-        if data is None:
-            not_found.append(city)
-            continue
-        averages = data.get("weighted_averages") or {}
-        val = averages.get(pollutant)
-        if val is not None:
-            station_count = data.get("average_station_count", 0)
-            entries.append((city, val, station_count))
-        else:
-            not_found.append(city)
-
-    entries.sort(key=lambda x: x[1], reverse=True)
-
-    lines.append(f"Air quality comparison — {pollutant} ({_unit(pollutant)}):")
-    lines.append("")
-    for i, (city, val, count) in enumerate(entries, 1):
-        lines.append(f"  {i}. {city}: {val:.1f} {_unit(pollutant)}{_who_comparison(pollutant, val)} ({count} stations)")
-    if not_found:
-        lines.append(f"\n  No data for: {', '.join(not_found)}")
 
     return "\n".join(lines)
 
@@ -193,20 +256,25 @@ def format_history(data: dict[str, Any], station_info: dict[str, Any] | None = N
     return "\n".join(lines)
 
 
-def format_calendar(data: dict[str, Any], station_info: dict[str, Any] | None = None) -> str:
-    """Format calendar (yearly daily averages) with monthly summaries."""
+def format_calendar(data: dict[str, Any], context_name: str = "") -> str:
+    """Format calendar (yearly daily averages) with monthly summaries.
+
+    Works for both station calendars and place calendars.
+    """
     lines: list[str] = []
-    mt = data.get("measurement_type", "?")
+    # Station calendar uses measurement_type, place calendar uses substance
+    mt = data.get("measurement_type") or data.get("substance") or "?"
     year = data.get("year", "?")
     days = data.get("days") or []
 
-    station_name = ""
-    if station_info:
-        station_name = station_info.get("name", "")
-
-    if station_name:
-        lines.append(f"Calendar for {station_name}")
+    if context_name:
+        lines.append(f"Calendar for {context_name}")
     lines.append(f"Measurement: {mt} ({_unit(mt)}), year: {year}")
+
+    station_count = data.get("station_count")
+    if station_count:
+        lines.append(f"Stations contributing data: {station_count}")
+
     lines.append("")
 
     if not days:
@@ -298,15 +366,12 @@ def format_place_details(data: dict[str, Any]) -> str:
     lines.append(f"{name} ({level}{', ' + country if country else ''})")
     lines.append(f"Stations: {station_count}")
 
-    # Hierarchy
-    hierarchy = data.get("hierarchy") or []
-    if hierarchy:
-        path = " > ".join(h.get("name", "?") for h in reversed(hierarchy))
+    path = _format_hierarchy(data)
+    if path:
         lines.append(f"Location: {path}")
 
     lines.append("")
 
-    # Air quality
     aq = data.get("air_quality")
     if aq:
         lines.append("Current air quality:")
@@ -321,7 +386,6 @@ def format_place_details(data: dict[str, Any]) -> str:
             lines.append(f"  Based on {aq_stations} stations")
         lines.append("")
 
-    # Ranking
     ranking = data.get("ranking")
     if ranking:
         substance = ranking.get("substance", "?")

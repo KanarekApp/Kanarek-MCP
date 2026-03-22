@@ -19,7 +19,7 @@ pytestmark = pytest.mark.skipif(
 @pytest.mark.asyncio
 async def test_get_air_quality_warsaw():
     result = await get_air_quality(city="Warsaw")
-    assert "pm25" in result.lower() or "pm10" in result.lower()
+    assert "PM2.5" in result or "PM10" in result
     assert "station" in result.lower()
 
 

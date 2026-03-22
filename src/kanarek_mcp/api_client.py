@@ -26,7 +26,7 @@ class KanarekClient:
         if self._client is None or self._loop is not loop or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 base_url=self._base_url,
-                headers={"User-Agent": "kanarek-mcp/1.1.0"},
+                headers={"User-Agent": "kanarek-mcp/1.2.0"},
                 timeout=30.0,
             )
             self._loop = loop

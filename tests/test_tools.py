@@ -17,6 +17,37 @@ from kanarek_mcp.server import (
 
 # --- Fixtures / sample data ---
 
+PLACE_SEARCH_RESPONSE = {
+    "query": "Warsaw",
+    "results": [
+        {
+            "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "name": "Warszawa",
+            "slug": "warszawa-pol",
+            "level": "city",
+            "country_code": "POL",
+        }
+    ],
+    "count": 1,
+    "timestamp": "2026-03-02T12:00:00",
+}
+
+PLACE_RESPONSE = {
+    "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "name": "Warszawa",
+    "slug": "warszawa-pol",
+    "level": "city",
+    "country_code": "POL",
+    "parent": {"id": "pppppppp-0000-0000-0000-000000000000", "name": "Mazowieckie", "slug": "mazowieckie-pol", "level": "state"},
+    "station_count": 160,
+    "hierarchy": [
+        {"id": "pppppppp-0000-0000-0000-000000000000", "name": "Mazowieckie", "slug": "mazowieckie-pol", "level": "state"},
+        {"id": "cccccccc-0000-0000-0000-000000000000", "name": "Polska", "slug": "polska", "level": "country"},
+    ],
+    "air_quality": {"pm25_avg": 12.1, "pm10_avg": 25.4, "station_count": 45},
+    "ranking": {"rank": 223, "total": 466, "substance": "pm25", "period": "24h", "average_value": 12.1},
+}
+
 SEARCH_RESPONSE = {
     "query": "Warsaw",
     "results": [
@@ -106,7 +137,7 @@ HISTORY_RESPONSE = {
     ],
 }
 
-CALENDAR_RESPONSE = {
+STATION_CALENDAR_RESPONSE = {
     "station_id": "1f8138aa-3092-4bb4-9ee0-23b0638de32b",
     "measurement_type": "pm25",
     "year": 2025,
@@ -118,6 +149,20 @@ CALENDAR_RESPONSE = {
         {"date": "2025-02-02", "avg_value": 12.0},
     ],
     "count": 5,
+}
+
+PLACE_CALENDAR_RESPONSE = {
+    "place": {"id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "name": "Warszawa", "slug": "warszawa-pol", "level": "city"},
+    "year": 2025,
+    "substance": "pm25",
+    "station_count": 45,
+    "days": [
+        {"date": "2025-01-01", "avg_value": 38.0},
+        {"date": "2025-01-02", "avg_value": 22.0},
+        {"date": "2025-01-03", "avg_value": 14.0},
+        {"date": "2025-02-01", "avg_value": 28.0},
+        {"date": "2025-02-02", "avg_value": 10.0},
+    ],
 }
 
 RANKINGS_RESPONSE = {
@@ -199,22 +244,28 @@ def reset_client():
 
 class TestGetAirQuality:
     @pytest.mark.asyncio
-    async def test_city_search_flow(self):
-        """Test city name → search → nearby orchestration."""
+    async def test_city_via_places(self):
+        """Test city name → places search → place detail."""
         with patch("kanarek_mcp.server._get_client") as mock_gc:
-            client = _mock_client([SEARCH_RESPONSE, NEARBY_RESPONSE])
+            client = _mock_client([PLACE_SEARCH_RESPONSE, PLACE_RESPONSE])
             mock_gc.return_value = client
 
             result = await get_air_quality(city="Warsaw")
 
-            assert "12.1" in result  # weighted average
-            assert "pm25" in result
-            assert "Niepodległości" in result
+            assert "Warszawa" in result
+            assert "12.1" in result  # pm25_avg
+            assert "25.4" in result  # pm10_avg
+            assert "PM2.5" in result
+            assert "PM10" in result
+            assert "#223" in result  # ranking
             assert client.get.call_count == 2
+            # Verify calls: places/search then places/{id}
+            assert "/places/search" in str(client.get.call_args_list[0])
+            assert "/places/" in str(client.get.call_args_list[1])
 
     @pytest.mark.asyncio
     async def test_coordinates_flow(self):
-        """Test direct coordinate lookup."""
+        """Test direct coordinate lookup still uses nearby stations."""
         with patch("kanarek_mcp.server._get_client") as mock_gc:
             client = _mock_client([NEARBY_RESPONSE])
             mock_gc.return_value = client
@@ -222,20 +273,8 @@ class TestGetAirQuality:
             result = await get_air_quality(latitude=52.23, longitude=21.01)
 
             assert "pm25" in result
+            assert "Area average" in result
             assert client.get.call_count == 1
-
-    @pytest.mark.asyncio
-    async def test_pollutant_filter(self):
-        """Test filtering by specific pollutant."""
-        with patch("kanarek_mcp.server._get_client") as mock_gc:
-            client = _mock_client([SEARCH_RESPONSE, NEARBY_RESPONSE])
-            mock_gc.return_value = client
-
-            result = await get_air_quality(city="Warsaw", pollutant="pm25")
-
-            assert "pm25" in result
-            # pm10 should not appear in filtered results for station lines
-            # (it may appear in area average if only pm25 is shown)
 
     @pytest.mark.asyncio
     async def test_no_params(self):
@@ -249,7 +288,7 @@ class TestGetAirQuality:
             mock_gc.return_value = client
 
             result = await get_air_quality(city="NonexistentCity")
-            assert "No stations found" in result
+            assert "No location found" in result
 
     @pytest.mark.asyncio
     async def test_api_connection_error(self):
@@ -265,11 +304,28 @@ class TestGetAirQuality:
 class TestCompareAirQuality:
     @pytest.mark.asyncio
     async def test_two_cities(self):
+        """Test places-based comparison."""
         with patch("kanarek_mcp.server._get_client") as mock_gc:
-            # Each city needs search + nearby = 4 calls total
+            # Each city: places/search + places/{id} = 4 calls
+            krakow_place_search = {
+                "query": "Kraków",
+                "results": [{"id": "kk-id", "name": "Kraków", "slug": "krakow-pol", "level": "city", "country_code": "POL"}],
+                "count": 1,
+            }
+            krakow_place = {
+                "id": "kk-id",
+                "name": "Kraków",
+                "slug": "krakow-pol",
+                "level": "city",
+                "country_code": "POL",
+                "station_count": 20,
+                "hierarchy": [],
+                "air_quality": {"pm25_avg": 45.5, "pm10_avg": 60.0, "station_count": 20},
+                "ranking": {"rank": 1, "total": 466, "substance": "pm25", "period": "24h", "average_value": 45.5},
+            }
             client = _mock_client([
-                SEARCH_RESPONSE, NEARBY_RESPONSE,
-                SEARCH_RESPONSE, NEARBY_RESPONSE,
+                PLACE_SEARCH_RESPONSE, PLACE_RESPONSE,
+                krakow_place_search, krakow_place,
             ])
             mock_gc.return_value = client
 
@@ -277,6 +333,9 @@ class TestCompareAirQuality:
 
             assert "comparison" in result.lower()
             assert "pm25" in result
+            assert "Kraków" in result
+            assert "Warszawa" in result
+            assert "Rank #" in result
 
     @pytest.mark.asyncio
     async def test_too_few_cities(self):
@@ -291,7 +350,8 @@ class TestCompareAirQuality:
 
 class TestGetAirQualityHistory:
     @pytest.mark.asyncio
-    async def test_city_history(self):
+    async def test_city_history_period(self):
+        """Test city + period still uses station-based history."""
         with patch("kanarek_mcp.server._get_client") as mock_gc:
             client = _mock_client([SEARCH_RESPONSE, STATION_DETAIL_RESPONSE, HISTORY_RESPONSE])
             mock_gc.return_value = client
@@ -303,9 +363,28 @@ class TestGetAirQualityHistory:
             assert "Trend" in result
 
     @pytest.mark.asyncio
-    async def test_station_calendar(self):
+    async def test_city_yearly_calendar_via_places(self):
+        """Test city + year uses place calendar for city-wide data."""
         with patch("kanarek_mcp.server._get_client") as mock_gc:
-            client = _mock_client([STATION_DETAIL_RESPONSE, CALENDAR_RESPONSE])
+            client = _mock_client([PLACE_SEARCH_RESPONSE, PLACE_CALENDAR_RESPONSE])
+            mock_gc.return_value = client
+
+            result = await get_air_quality_history(city="Warsaw", year=2025)
+
+            assert "2025" in result
+            assert "Warszawa" in result
+            assert "Monthly" in result
+            assert "Stations contributing data: 45" in result
+            assert client.get.call_count == 2
+            # Verify it called places/search then places/{id}/calendar
+            assert "/places/search" in str(client.get.call_args_list[0])
+            assert "/calendar" in str(client.get.call_args_list[1])
+
+    @pytest.mark.asyncio
+    async def test_station_calendar(self):
+        """Test station_id + year uses station calendar."""
+        with patch("kanarek_mcp.server._get_client") as mock_gc:
+            client = _mock_client([STATION_DETAIL_RESPONSE, STATION_CALENDAR_RESPONSE])
             mock_gc.return_value = client
 
             result = await get_air_quality_history(
@@ -335,6 +414,7 @@ class TestGetAirQualityRankings:
             assert "Kraków" in result
             assert "Warszawa" in result
             assert "45.5" in result
+            assert "place_id:" in result
 
     @pytest.mark.asyncio
     async def test_place_detail(self):
