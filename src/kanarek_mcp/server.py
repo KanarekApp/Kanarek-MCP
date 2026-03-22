@@ -14,7 +14,7 @@ from kanarek_mcp.formatters import (
     format_comparison,
     format_config,
     format_history,
-    format_ranking_details,
+    format_place_details,
     format_rankings_list,
     format_station_details,
     format_stations,
@@ -218,28 +218,28 @@ async def get_air_quality_rankings(
     pollutant: str = "pm25",
     period: str = "24h",
     limit: int = 10,
-    identifier: str | None = None,
+    place_id: str | None = None,
 ) -> str:
-    """Get air quality rankings by city or station.
+    """Get air quality rankings by city or country, or details for a specific place.
 
     Args:
-        ranking_type: "city" or "station" (default: city)
-        pollutant: Pollutant to rank by (default: pm25). Options: pm25, pm10, no2, o3
-        period: Time period — "1h", "8h", or "24h" (default: 24h)
+        ranking_type: "city" or "country" (default: city)
+        pollutant: Pollutant to rank by (default: pm25). Options: pm25, pm10
+        period: Time period — "24h", "7d", "30d", or "12m" (default: 24h)
         limit: Number of results (default: 10, max: 50)
-        identifier: City or station identifier for detail view (e.g. "Warszawa-POL")
+        place_id: Place UUID for detail view (from rankings results). Shows place air quality and ranking info.
     """
     try:
         client = _get_client()
 
-        if identifier:
+        if place_id:
             data = await client.get(
-                f"/rankings/{ranking_type}/{identifier}/details",
+                f"/places/{place_id}",
                 params={"substance": pollutant, "period": period},
             )
             if not data:
-                return f"No ranking details found for \"{identifier}\"."
-            return format_ranking_details(data)
+                return f"No place found for \"{place_id}\"."
+            return format_place_details(data)
         else:
             data = await client.get(
                 "/rankings",

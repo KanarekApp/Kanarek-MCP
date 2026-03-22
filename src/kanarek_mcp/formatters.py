@@ -277,7 +277,8 @@ def format_rankings_list(data: dict[str, Any]) -> str:
         country = r.get("country_code", "")
         avg = r.get("average_value", 0)
         count = r.get("station_count", 0)
-        lines.append(f"  {rank}. {name} ({country}) — {avg:.1f} {_unit(substance)}{_who_comparison(substance, avg)} [{count} stations]")
+        place_id = r.get("place_id", "")
+        lines.append(f"  {rank}. {name} ({country}) — {avg:.1f} {_unit(substance)}{_who_comparison(substance, avg)} [{count} stations] place_id: {place_id}")
 
     total = data.get("total_calculated")
     if total:
@@ -286,32 +287,51 @@ def format_rankings_list(data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def format_ranking_details(data: dict[str, Any]) -> str:
-    """Format ranking detail view with station breakdown."""
+def format_place_details(data: dict[str, Any]) -> str:
+    """Format place detail view with air quality and ranking info."""
     lines: list[str] = []
     name = data.get("name", "?")
-    substance = data.get("substance", "?")
-    period = data.get("period", "?")
-    avg = data.get("average_value", 0)
-    rank = data.get("rank", "?")
-    total = data.get("total_in_ranking", "?")
-    stations = data.get("stations") or []
+    level = data.get("level", "?")
+    country = data.get("country_code", "")
+    station_count = data.get("station_count", 0)
 
-    lines.append(f"{name} — {substance} ({_unit(substance)}), period: {period}")
-    lines.append(f"Average: {avg:.1f} {_unit(substance)}{_who_comparison(substance, avg)}")
-    lines.append(f"Rank: {rank} of {total}")
-    lines.append(f"Stations: {data.get('station_count', len(stations))}")
+    lines.append(f"{name} ({level}{', ' + country if country else ''})")
+    lines.append(f"Stations: {station_count}")
+
+    # Hierarchy
+    hierarchy = data.get("hierarchy") or []
+    if hierarchy:
+        path = " > ".join(h.get("name", "?") for h in reversed(hierarchy))
+        lines.append(f"Location: {path}")
+
     lines.append("")
 
-    display = stations[:15]
-    for s in display:
-        s_name = s.get("name", "?")
-        s_avg = s.get("average_value", 0)
-        lines.append(f"  {s_name}: {s_avg:.1f} {_unit(substance)}")
+    # Air quality
+    aq = data.get("air_quality")
+    if aq:
+        lines.append("Current air quality:")
+        pm25 = aq.get("pm25_avg")
+        pm10 = aq.get("pm10_avg")
+        if pm25 is not None:
+            lines.append(f"  PM2.5: {pm25:.1f} {_unit('pm25')}{_who_comparison('pm25', pm25)}")
+        if pm10 is not None:
+            lines.append(f"  PM10: {pm10:.1f} {_unit('pm10')}{_who_comparison('pm10', pm10)}")
+        aq_stations = aq.get("station_count")
+        if aq_stations:
+            lines.append(f"  Based on {aq_stations} stations")
+        lines.append("")
 
-    remaining = len(stations) - len(display)
-    if remaining > 0:
-        lines.append(f"  ...and {remaining} more stations")
+    # Ranking
+    ranking = data.get("ranking")
+    if ranking:
+        substance = ranking.get("substance", "?")
+        period = ranking.get("period", "?")
+        avg = ranking.get("average_value", 0)
+        rank = ranking.get("rank", "?")
+        total = ranking.get("total", "?")
+        lines.append(f"Ranking ({substance}, {period}):")
+        lines.append(f"  Average: {avg:.1f} {_unit(substance)}{_who_comparison(substance, avg)}")
+        lines.append(f"  Rank: {rank} of {total}")
 
     return "\n".join(lines)
 

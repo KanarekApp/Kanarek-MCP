@@ -129,6 +129,8 @@ RANKINGS_RESPONSE = {
             "rank": 1,
             "name": "Kraków",
             "identifier": "Kraków-POL",
+            "place_id": "11111111-1111-1111-1111-111111111111",
+            "place_slug": "krakow-pol",
             "country_code": "POL",
             "average_value": 45.5,
             "station_count": 20,
@@ -138,6 +140,8 @@ RANKINGS_RESPONSE = {
             "rank": 2,
             "name": "Warszawa",
             "identifier": "Warszawa-POL",
+            "place_id": "22222222-2222-2222-2222-222222222222",
+            "place_slug": "warszawa-pol",
             "country_code": "POL",
             "average_value": 25.0,
             "station_count": 160,
@@ -149,21 +153,20 @@ RANKINGS_RESPONSE = {
     "timestamp": "2026-03-02T12:00:00",
 }
 
-RANKING_DETAIL_RESPONSE = {
-    "type": "city",
+PLACE_DETAIL_RESPONSE = {
+    "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
     "name": "Warszawa",
-    "identifier": "Warszawa-POL",
+    "slug": "warszawa-pol",
+    "level": "city",
     "country_code": "POL",
-    "substance": "pm25",
-    "period": "24h",
-    "average_value": 11.3,
-    "rank": 223,
-    "total_in_ranking": 466,
+    "parent": {"id": "pppppppp-0000-0000-0000-000000000000", "name": "Mazowieckie", "slug": "mazowieckie-pol", "level": "state"},
     "station_count": 160,
-    "stations": [
-        {"id": "aaa", "name": "Station A", "location": {"latitude": 52.16, "longitude": 21.2}, "average_value": 31.5, "measurement_count": 23},
-        {"id": "bbb", "name": "Station B", "location": {"latitude": 52.20, "longitude": 21.1}, "average_value": 28.8, "measurement_count": 23},
+    "hierarchy": [
+        {"id": "pppppppp-0000-0000-0000-000000000000", "name": "Mazowieckie", "slug": "mazowieckie-pol", "level": "state"},
+        {"id": "cccccccc-0000-0000-0000-000000000000", "name": "Polska", "slug": "polska", "level": "country"},
     ],
+    "air_quality": {"pm25_avg": 11.3, "pm10_avg": 25.4, "station_count": 45},
+    "ranking": {"rank": 223, "total": 466, "substance": "pm25", "period": "24h", "average_value": 11.3},
 }
 
 
@@ -334,16 +337,17 @@ class TestGetAirQualityRankings:
             assert "45.5" in result
 
     @pytest.mark.asyncio
-    async def test_detail_rankings(self):
+    async def test_place_detail(self):
         with patch("kanarek_mcp.server._get_client") as mock_gc:
-            client = _mock_client([RANKING_DETAIL_RESPONSE])
+            client = _mock_client([PLACE_DETAIL_RESPONSE])
             mock_gc.return_value = client
 
-            result = await get_air_quality_rankings(identifier="Warszawa-POL")
+            result = await get_air_quality_rankings(place_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
 
             assert "Warszawa" in result
             assert "223" in result
-            assert "Station A" in result
+            assert "11.3" in result
+            assert "city" in result
 
 
 class TestFindStations:

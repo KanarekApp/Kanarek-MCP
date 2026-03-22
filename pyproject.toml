@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kanarek-mcp"
-version = "1.0.0"
+version = "1.1.0"
 description = "MCP server for real-time air quality data from 15,000+ stations across Poland"
 readme = "README.md"
 license = "CC-BY-NC-ND-4.0"
